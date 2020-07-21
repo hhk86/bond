@@ -101,15 +101,20 @@ if __name__ == "__main__":
     data1 = data1.set_index(keys="time_offset", drop=False)
     data1 = data1.drop("index", axis=1)
 
-    print(df2)
-    print(data1)
 
     df2 = pd.merge(df2, data1, on="time")
+
     df2['color'] = df2['买卖方向'].apply(lambda s: "red" if s == "买入" else "green")
     df2['markersize'] = df2['成交数量'].apply(qty2size)
-    df2["price"] = df["成交价格"]
+    df2["price"] = df2["成交价格"]
     df2 = df2[["time_offset", "price", "markersize", "color"]]
-    print(df2)
+
+
+    plt.plot(data1["time_offset"], data1["price"])
+    for key, value in df2.iterrows():
+        # print(value["time_offset"], value["price"])
+        plt.plot([value["time_offset"],], [value["price"],], marker='o', markersize=value["markersize"], color=value["color"])
+    plt.show()
 
     sys.exit()
 
