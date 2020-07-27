@@ -71,113 +71,71 @@ def qty2size(n):
     else:
         return 6
 
+def get_full_data(date, date_next, ticker):
+    with TsTickData() as obj:
+        data = obj.ticks(code=ticker, start_date=date, end_date=date_next)
+    data["index"] = data.index
+    data["time"] = data["index"].apply(lambda tu: tu[0][-8:])
+    data = data[((data["time"] <= "11:30:00") | (data["time"] >= "13:00:00")) & (data["time"] <= "15:00:00")]
+    data["time_offset"] = list(range(data.shape[0]))
+    data = data.set_index(keys="time_offset", drop=False)
+    data = data.drop("index", axis=1)
+    return data
 
-if __name__ == "__main__":
+def get_spot_transaction_data(data, spot_full):
+    data = pd.merge(data, spot_full, on="time")
+    data['color'] = data['买卖方向'].apply(lambda s: "red" if s == "买入" else "green")
+    data['markersize'] = data['成交数量'].apply(qty2size)
+    data["price"] = data["成交价格"]
+    data = data[["time_offset", "price", "markersize", "color"]]
+    return data
 
-    df = pd.read_excel("511260.xlsx", encoding="gbk", skiprows=4)
-    df = df[["成交时间", "买卖方向", "成交价格", "成交数量"]]
-    df = df.iloc[:-1,:]
-    df["date"] = df["成交时间"].apply(lambda s: str(dt.datetime.strptime(s, "%Y-%m-%d %H:%M:%S").date()))
-    df["time"] = df["成交时间"].apply(lambda s: str(dt.datetime.strptime(s, "%Y-%m-%d %H:%M:%S").time()))
-    # df.to_csv("debug.csv", encoding="gbk")
-    date_ls = sorted(list(set(df["date"].to_list())))
+def get_future_transaction_data(future, future_full):
+    data = pd.merge(future, future_full, on="time")
+    print(data)
+
+
+def get_chart(spot, future, spot_ticker, future_ticker):
+    date_ls = sorted(list(set(spot["date"].to_list())))
     date_ls = [s[:4] + s[5:7] + s[8:] for s in date_ls]
     date = date_ls[-1]
     date_next = "20200721"
     print(date, date_next)
-    df2 = df[df["date"] == date[:4] + '-' + date[4:6] + '-' + date[6:]]
+    spot_transaction_raw = spot[spot["date"] == date[:4] + '-' + date[4:6] + '-' + date[6:]]
+    spot_full = get_full_data(date, date_next, spot_ticker)
+    spot_transaction = get_spot_transaction_data(spot_transaction_raw, spot_full)
+
+
+    future_transaction_raw = future[future["date"] == date[:4] + '-' + date[4:6] + '-' + date[6:]]
+    future_full = get_full_data(date, date_next, future_ticker)
+    future_transaction = get_future_transaction_data(future_transaction_raw, future_full)
 
 
 
-
-
-    with TsTickData() as obj:
-        data1 = obj.ticks(code="511260.SH", start_date=date, end_date=date_next)
-    data1["index"] = data1.index
-    data1["time"] = data1["index"].apply(lambda tu: tu[0][-8:])
-    data1 = data1[(data1["time"] <= "11:30:00") | (data1["time"] >= "13:00:00")]
-    data1["time_offset"] = list(range(data1.shape[0]))
-    pd.set_option("display.max_columns", None)
-    data1 = data1.set_index(keys="time_offset", drop=False)
-    data1 = data1.drop("index", axis=1)
-
-
-    df2 = pd.merge(df2, data1, on="time")
-
-    df2['color'] = df2['买卖方向'].apply(lambda s: "red" if s == "买入" else "green")
-    df2['markersize'] = df2['成交数量'].apply(qty2size)
-    df2["price"] = df2["成交价格"]
-    df2 = df2[["time_offset", "price", "markersize", "color"]]
-
-
-    plt.plot(data1["time_offset"], data1["price"])
-    for key, value in df2.iterrows():
-        # print(value["time_offset"], value["price"])
+    plt.plot(spot_full["time_offset"], spot_full["price"], color="lightgrey")
+    for key, value in spot_transaction.iterrows():
         plt.plot([value["time_offset"],], [value["price"],], marker='o', markersize=value["markersize"], color=value["color"])
     plt.show()
 
-    sys.exit()
+
+if __name__ == "__main__":
+
+
+    spot = pd.read_excel("511260.xlsx", encoding="gbk", skiprows=4)
+    spot = spot[["成交时间", "买卖方向", "成交价格", "成交数量"]]
+    spot = spot.iloc[:-1,:]
+    spot["date"] = spot["成交时间"].apply(lambda s: str(dt.datetime.strptime(s, "%Y-%m-%d %H:%M:%S").date()))
+    spot["time"] = spot["成交时间"].apply(lambda s: str(dt.datetime.strptime(s, "%Y-%m-%d %H:%M:%S").time()))
+
+
+    future = pd.read_excel("T2009.xls", encoding="gbk")
+    future = future[["日期", "成交时间", "委托方向", "成交价格", "成交数量"]]
+    future = future.iloc[:-1, :]
+    future["委托方向"] = future["委托方向"].apply(lambda s: s[:2])
+    future.columns = ["date", "time", "买卖方向", "成交价格", "成交数量"]
+    pd.set_option("display.max_columns", None)
+
+    get_chart(spot, future, "511260.SH", "T2009")
 
 
 
-
-
-    date = "20191218"  #今日日期
-    end_date = "20191219" #迫于天软查询语句，需要设置一个未来日期
-    df = pd.read_excel("当日委托20191218161549.xlsx", encoding="gbk")
-    df.sort_values(by="时间", inplace=True)
-    df["ticker"] = df["代码/名称"].apply(lambda s: "SH" + s[:6] if s.startswith('6') else "SZ" + s[:6])
-    df["name"] = df["代码/名称"].apply(lambda s: s[7:])
-    df.columns = ["time", "ticker/name", "direction", "quantity", "price", "status", "ticker", "name"]
-    df = df[["time", "ticker", "name", "price", "quantity", "direction", "status"]]
-    try:
-        df["time"] = df["time"].apply(lambda s: str(dt.datetime.strptime(s, "%Y-%m-%d %H:%M:%S").time()))
-        print("This is historical order format.")
-    except ValueError:
-        df["time"] = df["time"].apply(lambda s: str(dt.datetime.strptime(s, "%H:%M:%S").time()))
-        print("This is today's order format.")
-    ticker_set = set(sorted(df["ticker"].tolist()))
-    i = 0
-    try:
-        os.makedirs("pictures_" + date +'/')
-    except FileExistsError:
-        pass
-    for ticker in ticker_set:
-        with TsTickData() as obj:
-            data = obj.ticks(code=ticker, start_date=date, end_date=end_date)
-        data["index"] = data.index
-        data["time"] = data["index"].apply(lambda tu: tu[0][-8:])
-        data = data[(data["time"] <= "11:30:00") | (data["time"] >= "13:00:00")]
-        data["time_offset"] = list(range(data.shape[0]))
-        plt.figure(figsize=(20, 10))
-        plt.plot(data["time_offset"], data["price"], color="gray", alpha=0.5)
-        sub_df = df[df["ticker"] == ticker]
-        sub_df["pct"] = round(sub_df["quantity"] / sub_df["quantity"].sum() * 100).astype(int)
-        for key, record in sub_df.iterrows():
-            if (record["time"] >= "11:30:00" and record["time"] <= "13:00:00") or record["time"] < "09:30:00" or record["time"] > "15:00:00":
-                print("Entrust order at illegal time!!!")
-                continue
-            if record["direction"] == "买入" and record["status"] == "已成":
-                marker = 'or'
-            elif record["direction"] == "卖出" and record["status"] == "已成":
-                marker = 'sg'
-            elif record["direction"] == "买入" and record["status"] == "已撤":
-                marker = '*r'
-            elif record["direction"] == "卖出" and record["status"] == "已撤":
-                marker = 'xg'
-            time_offset = data[data["time"] == record["time"]]["time_offset"].squeeze()
-            try:
-                plt.plot([time_offset,], [record["price"],], marker, markersize=6)
-            except ZeroDivisionError:
-                print("integer division or modulo by zero")
-                print(time_offset)
-                print(record["price"])
-            plt.text(time_offset, record["price"] + 0.01, str(record["pct"]) +'%')
-        xticks = list(range(14401))[::1800]
-        xticklabels = ["9:30", "10:00", "10:30", "11:00", "11:30/13:00", "13:30", "14:00", "14:30", "15:00"]
-        plt.xticks(xticks, xticklabels)
-        plt.title(ticker + " | " + date, fontsize=25)
-        plt.savefig("pictures_" + date +'/' + ticker + '_' + date + '.png')
-        plt.close()
-        i += 1
-        print("Process " + str(i) + " stocks")
